@@ -28,5 +28,9 @@ variable "frontend_base_URL" {
   default = null
 }
 
-
+variable "cluster_name" {
+  default     = "logpay"
+  type        = string
+  description = "the name of an ECS cluster"
+}
 

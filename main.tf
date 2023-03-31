@@ -17,76 +17,40 @@ provider "aws" {
   region = "eu-central-1"
 }
 
-
-
-data "aws_iam_policy_document" "assume_role" {
-  statement {
-    effect = "Allow"
-    principals {
-      type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-    actions = ["sts:AssumeRole"]
-  }
-}
-
-data "aws_iam_policy_document" "access_policy" {
-  statement {
-    actions = [
-      "ecs:ListTasks",
-      "ecs:DescribeTasks",
-      "ecs:DescribeTaskDefinition",
-      "ecs:ListClusters"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    actions = [
-      "logs:CreateLogStream",
-      "logs:PutLogEvents"
-    ]
-    resources = ["arn:aws:logs:eu-central-1:*:log-group:/aws/lambda/${var.lambda_name}/*"]
-  }
-
-  statement {
-    actions = [
-      "logs:CreateLogGroup"
-    ]
-    resources = ["arn:aws:logs:eu-central-1:*:*"]
-  }
-
-  statement {
-    actions   = ["ssm:GetParameter"]
-    resources = ["arn:aws:ssm:*:*:parameter/deployment/stage"]
+data "aws_vpc" "app_vpc" {
+  filter {
+    name   = "tag:Name"
+    values = ["app-vpc_TF"]
   }
 }
 
 
-resource "aws_iam_role" "iam_for_lambda" {
-  name               = "AxionLambdaExecutionRole-${var.lambda_name}"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+data "aws_lb" "netLBinternal" {
+  name = "${var.cluster_name}-nlb"
 }
 
-data "archive_file" "lambda" {
-  type        = "zip"
-  source_file = "ecs-discovery.py"
-  output_path = "lambda_function_payload.zip"
+data "aws_lb" "internalLB" {
+  name = "${var.cluster_name}-LBinternal"
 }
 
-resource "aws_lambda_function" "lambda" {
-  filename         = "lambda_function_payload.zip"
-  function_name    = "ecs-service-discovery"
-  role             = aws_iam_role.iam_for_lambda.arn
-  source_code_hash = data.archive_file.lambda.output_base64sha256
-  runtime          = "python3.9"
-  handler          = "lambda_handler"
+data "aws_lb_listener" "internalLB" {
+  load_balancer_arn = data.aws_lb.internalLB.arn
+  port              = 443
 }
 
-resource "aws_cloudwatch_log_group" "log_group" {
-  name              = "/aws/lambda/${var.lambda_name}"
-  retention_in_days = 30
-  lifecycle {
-    prevent_destroy = false
-  }
+data "aws_ssm_parameter" "stage" {
+  name = "/deployment/stage"
+}
+
+data "aws_route53_zone" "selected" {
+  name         = "${data.aws_ssm_parameter.stage.value}.logpay.byaxion.com"  
+}
+
+
+resource "aws_route53_record" "r53-entry" {
+  zone_id = data.aws_route53_zone.selected.id
+  name    = "${var.lambda_name}.${data.aws_ssm_parameter.stage.value}.logpay.byaxion.com"
+  type    = "CNAME"
+  ttl     = "60"
+  records = [data.aws_lb.internalLB.dns_name]
 }
