@@ -27,7 +27,7 @@ def discoverTargets2(stage):
         srv_id = service['Id']
         instances = client.list_instances(ServiceId=srv_id)['Instances']
         targets = []
-        labels = {'service_name' : service['Name'], 'stage' : stage}
+        labels = {'application' : service['Name'], 'stage' : stage}
         for instance in instances:
             ip = instance['Attributes']['AWS_INSTANCE_IPV4']
             port = instance['Attributes']['AWS_INSTANCE_PORT']
